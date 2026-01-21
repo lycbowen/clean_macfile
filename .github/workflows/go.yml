@@ -1,0 +1,39 @@
+name: Build All Platforms
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
+        cache: false
+
+    - name: Build
+      run: |
+        mkdir build
+        CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o build/auto-clean-windows-amd64.exe
+        CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o build/auto-clean-linux-amd64
+        CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o build/auto-clean-darwin-arm64
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        name: Release ${{ github.ref_name }}
+        tag_name: ${{ github.ref_name }}
+        prerelease: ${{ contains(github.ref_name, '-') }}
+        files: |
+          build/*
+        generate_release_notes: true
