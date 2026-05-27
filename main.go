@@ -4,34 +4,34 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 )
 
-var (
-	origDir   string
-	trash_dir string
-)
-
-// 递归扫描目录，返回所有需要归档的文件路径
-func readDirRecursion(dirName string) ([]string, error) {
+// Recursively scans the target directory and returns macOS metadata files to clean.
+func readDirRecursion(dirName, trashDir string) ([]string, error) {
 	var files []string
 	fs, err := os.ReadDir(dirName)
 	if err != nil {
 		return nil, err
 	}
 	for _, f := range fs {
-		fullPath := path.Join(dirName, f.Name())
+		fullPath := filepath.Join(dirName, f.Name())
 		if f.IsDir() {
-			childrenFiles, err := readDirRecursion(fullPath)
+			if fullPath == trashDir {
+				continue
+			}
+			childrenFiles, err := readDirRecursion(fullPath, trashDir)
 			if err != nil {
 				return nil, err
 			}
 			files = append(files, childrenFiles...)
 		} else {
-			info, _ := f.Info()
-			if (strings.HasPrefix(f.Name(), "._") && info.Size() == 4096) || f.Name() == ".DS_Store" {
+			ok, err := isMacJunkFile(f)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
 				files = append(files, fullPath)
 			}
 		}
@@ -39,7 +39,21 @@ func readDirRecursion(dirName string) ([]string, error) {
 	return files, nil
 }
 
-// 自动生成不冲突的目标文件名
+func isMacJunkFile(entry os.DirEntry) (bool, error) {
+	if entry.Name() == ".DS_Store" {
+		return true, nil
+	}
+	if !strings.HasPrefix(entry.Name(), "._") {
+		return false, nil
+	}
+	info, err := entry.Info()
+	if err != nil {
+		return false, err
+	}
+	return info.Size() == 4096, nil
+}
+
+// Returns a destination path that does not conflict with existing files.
 func uniqueDest(dest string) string {
 	if _, err := os.Stat(dest); os.IsNotExist(err) {
 		return dest
@@ -49,7 +63,7 @@ func uniqueDest(dest string) string {
 	dir := filepath.Dir(dest)
 	i := 1
 	for {
-		newDest := path.Join(dir, fmt.Sprintf("%s_%d%s", name, i, ext))
+		newDest := filepath.Join(dir, fmt.Sprintf("%s_%d%s", name, i, ext))
 		if _, err := os.Stat(newDest); os.IsNotExist(err) {
 			return newDest
 		}
@@ -57,55 +71,66 @@ func uniqueDest(dest string) string {
 	}
 }
 
-// 归档文件
-func moveFiles(files []string) error {
+// Moves files to the archive directory.
+func moveFiles(files []string, trashDir string) error {
 	for _, f := range files {
-		dest := uniqueDest(path.Join(trash_dir, path.Base(f)))
+		dest := uniqueDest(filepath.Join(trashDir, filepath.Base(f)))
 		if err := os.Rename(f, dest); err != nil {
 			return err
 		}
-		fmt.Println("已归档", f)
+		fmt.Println("Moved to archive:", f)
 	}
 	return nil
 }
 
 func main() {
+	var origDir string
 	flag.StringVar(&origDir, "t", "", "Clean the target directory, default is current directory")
 	flag.Parse()
 
 	if origDir == "" {
-		origDir, _ = os.Getwd()
+		var err error
+		origDir, err = os.Getwd()
+		if err != nil {
+			fmt.Println("Failed to get current working directory:", err)
+			return
+		}
 	}
-	trash_dir = path.Join(origDir, ".wait_clean")
-	os.MkdirAll(trash_dir, 0755)
+	trashDir := filepath.Join(origDir, ".wait_clean")
+	if err := os.MkdirAll(trashDir, 0755); err != nil {
+		fmt.Println("Failed to create archive directory:", err)
+		return
+	}
 
-	files, err := readDirRecursion(origDir)
+	files, err := readDirRecursion(origDir, trashDir)
 	if err != nil {
-		fmt.Println("读取目录失败:", err)
+		fmt.Println("Failed to read target directory:", err)
 		return
 	}
 	if len(files) == 0 {
-		fmt.Println("没有找到可归档的文件")
-		os.Remove(trash_dir)
+		fmt.Println("No macOS metadata files found")
+		if err := os.Remove(trashDir); err != nil && !os.IsNotExist(err) {
+			fmt.Println("Failed to remove empty archive directory:", err)
+		}
 		return
 	}
 
-	if err := moveFiles(files); err != nil {
-		fmt.Println("归档文件失败:", err)
+	if err := moveFiles(files, trashDir); err != nil {
+		fmt.Println("Failed to move files to archive:", err)
 		return
 	}
 
-	fmt.Print("是否要删除已归档文件？(Y/n)：")
+	fmt.Print("Delete archived files? (Y/n): ")
 	var input string
 	fmt.Scanln(&input)
 	input = strings.TrimSpace(strings.ToLower(input))
 	if input == "y" || input == "" {
-		if err := os.RemoveAll(trash_dir); err != nil {
-			fmt.Println("删除失败:", err)
+		if err := os.RemoveAll(trashDir); err != nil {
+			fmt.Println("Failed to delete archived files:", err)
 		} else {
-			fmt.Println("已删除归档文件")
+			fmt.Println("Archived files deleted")
 		}
 	} else {
-		fmt.Println("归档文件保存在:", trash_dir)
+		fmt.Println("Archived files kept at:", trashDir)
 	}
 }
