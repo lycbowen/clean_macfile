@@ -5,8 +5,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"runtime/debug"
 	"strings"
 )
+
+var version = "dev"
+
+var pseudoVersionPattern = regexp.MustCompile(`-\d{14}-[0-9a-f]{12}$|-\d+\.\d{14}-[0-9a-f]{12}$`)
 
 // Recursively scans the target directory and returns macOS metadata files to clean.
 func readDirRecursion(dirName, trashDir string) ([]string, error) {
@@ -83,10 +89,39 @@ func moveFiles(files []string, trashDir string) error {
 	return nil
 }
 
+func appVersion() string {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		if isInstallVersion(info.Main.Version) {
+			return info.Main.Version
+		}
+	}
+	if version != "" {
+		return version
+	}
+	return "dev"
+}
+
+func isInstallVersion(v string) bool {
+	if v == "" || v == "(devel)" {
+		return false
+	}
+	if strings.Contains(v, "+dirty") {
+		return false
+	}
+	return !pseudoVersionPattern.MatchString(v)
+}
+
 func main() {
 	var origDir string
+	var showVersion bool
 	flag.StringVar(&origDir, "t", "", "Clean the target directory, default is current directory")
+	flag.BoolVar(&showVersion, "version", false, "Print version and exit")
 	flag.Parse()
+
+	if showVersion {
+		fmt.Println("maclean", appVersion())
+		return
+	}
 
 	if origDir == "" {
 		var err error

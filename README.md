@@ -1,93 +1,69 @@
-# clean_macfile
+# maclean
 
-`clean_macfile` is a small command-line tool for cleaning macOS metadata files from a directory tree.
+`maclean` removes macOS metadata files from folders you use on Windows, Linux, USB drives, shared drives, archives, or anywhere else those extra files get in the way.
 
-It is useful when files have been copied from macOS to Windows, Linux, USB drives, archives, or shared folders and leave behind files such as `.DS_Store` and AppleDouble `._*` metadata files.
-
-## What It Cleans
-
-The tool recursively scans the target directory and moves the following files into a temporary archive directory named `.wait_clean`:
+It looks for:
 
 - `.DS_Store`
-- `._*` files with a size of `4096` bytes
+- AppleDouble `._*` files that are 4096 bytes
 
-The `.wait_clean` directory is skipped during scanning, so previously archived files are not processed again.
+Matching files are first moved into a `.wait_clean` folder. After that, `maclean` asks whether you want to delete the archived files, so you get one last chance to keep them.
+
+## Install
+
+If you have Go installed:
+
+```sh
+go install github.com/hicbowen/clean_macfile/cmd/maclean@latest
+```
+
+Make sure your Go binary directory is in `PATH`. It is usually:
+
+- macOS/Linux: `~/go/bin`
+- Windows: `%USERPROFILE%\go\bin`
+
+You can also download a release binary from the GitHub Releases page if you do not want to install Go.
 
 ## Usage
 
-Clean the current directory:
+Clean the current folder:
 
 ```sh
-clean_macfile
+maclean
 ```
 
-Clean a specific directory:
+Clean a specific folder:
 
 ```sh
-clean_macfile -t /path/to/target
+maclean -t /path/to/folder
 ```
 
-After matching files are moved into `.wait_clean`, the tool asks whether to delete the archived files:
+On Windows:
+
+```powershell
+maclean -t D:\SharedFolder
+```
+
+Check the installed version:
+
+```sh
+maclean -version
+```
+
+## What Happens
+
+When matching files are found, `maclean` moves them into `.wait_clean` inside the target folder and then prompts:
 
 ```text
 Delete archived files? (Y/n):
 ```
 
-Press `Enter` or type `y` to delete them. Type `n` to keep them in `.wait_clean`.
+Press `Enter` or type `y` to delete them. Type `n` to keep them in `.wait_clean` for review.
 
-## Build From Source
-
-Requires Go 1.23 or later.
-
-```sh
-go build -o clean_macfile
-```
-
-On Windows:
-
-```sh
-go build -o clean_macfile.exe
-```
-
-## Examples
-
-Clean the current folder and delete archived files:
-
-```sh
-clean_macfile
-# Press Enter when prompted
-```
-
-Clean a mounted drive and keep the archive for review:
-
-```sh
-clean_macfile -t /Volumes/USB
-# Type n when prompted
-```
-
-Clean a Windows folder:
-
-```powershell
-.\clean_macfile.exe -t D:\SharedFolder
-```
-
-## Release Builds
-
-The GitHub Actions workflow builds release binaries for:
-
-- Windows amd64
-- Linux amd64
-- macOS arm64
-
-Release builds are generated when pushing a tag that starts with `v`, such as:
-
-```sh
-git tag v1.0.0
-git push origin v1.0.0
-```
+If no matching files are found, `maclean` prints a short message and leaves the folder unchanged.
 
 ## Notes
 
-- The tool moves files before deleting them, giving you a chance to review the archive.
-- If a file with the same name already exists in `.wait_clean`, a numeric suffix is added to avoid overwriting it.
-- The tool is intended for macOS metadata cleanup only; it does not remove general hidden files.
+- `.wait_clean` is skipped during scanning.
+- Existing files in `.wait_clean` are not overwritten; duplicate names get a numeric suffix.
+- `maclean` only targets macOS metadata files. It does not remove general hidden files.
